@@ -1,0 +1,1263 @@
+-- Moon Animator Enhanced v4.0
+if _G.MoonAnimCore then return end
+_G.MoonAnimCore = true
+
+local Players = game:GetService("Players")
+local RS = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local SoundService = game:GetService("SoundService")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local Camera = workspace.CurrentCamera
+
+-- Enhanced Dummy Detection
+local function findDummy()
+    local possibleNames = {"Dummy", "MoonAnimatorDummy", "AnimationDummy", "TestDummy"}
+    for _, name in ipairs(possibleNames) do
+        local dummy = workspace:FindFirstChild(name)
+        if dummy and dummy:FindFirstChild("Head") and dummy:FindFirstChild("Humanoid") then
+            return dummy
+        end
+    end
+    return nil
+end
+
+local Dummy = findDummy()
+if not Dummy then
+    warn("⚠️ Nenhum Dummy compatível encontrado no workspace!")
+    return
+end
+
+-- Enhanced part detection for R15/R6
+local partsToRecord = {}
+local function detectDummyType()
+    if Dummy:FindFirstChild("UpperTorso") then
+        -- R15
+        partsToRecord = {
+            "Head", "UpperTorso", "LowerTorso",
+            "LeftUpperArm", "LeftLowerArm", "LeftHand",
+            "RightUpperArm", "RightLowerArm", "RightHand",
+            "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+            "RightUpperLeg", "RightLowerLeg", "RightFoot"
+        }
+        print("🤖 Dummy R15 detectado")
+    else
+        -- R6
+        partsToRecord = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}
+        print("🤖 Dummy R6 detectado")
+    end
+end
+
+detectDummyType()
+
+local rootPartName = Dummy:FindFirstChild("HumanoidRootPart") and "HumanoidRootPart" or "RootPart"
+
+-- Enhanced default pose capture
+local defaultPose = {}
+for _, partName in pairs(partsToRecord) do
+    local part = Dummy:FindFirstChild(partName)
+    if part then
+        defaultPose[partName] = part.CFrame
+    end
+end
+
+local defaultRootCFrame = nil
+if rootPartName then
+    local rootPart = Dummy:FindFirstChild(rootPartName)
+    if rootPart then
+        defaultRootCFrame = rootPart.CFrame
+        rootPart.Transparency = 0.95  -- Slightly more visible
+        rootPart.CastShadow = false
+    end
+end
+
+-- Enhanced animation data structure
+local animationData = {}
+local animationMetadata = {
+    name = "Untitled Animation",
+    author = LocalPlayer.Name,
+    created = os.date("%Y-%m-%d %H:%M:%S"),
+    fps = 30,
+    duration = 0
+}
+
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Main GUI setup
+local gui = Instance.new("ScreenGui")
+gui.Name = "MoonAnimatorEnhanced"
+gui.Parent = playerGui
+gui.ResetOnSpawn = false
+gui.Enabled = true
+
+-- Enhanced intro with particles effect
+local introFrame = Instance.new("Frame")
+introFrame.Name = "Intro"
+introFrame.Size = UDim2.new(1,0,1,0)
+introFrame.BackgroundColor3 = Color3.fromRGB(5,5,15)
+introFrame.BackgroundTransparency = 0
+introFrame.ZIndex = 1000
+introFrame.Parent = gui
+
+-- Gradient background for intro
+local gradient = Instance.new("UIGradient")
+gradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(5,5,15)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(15,10,25)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(5,5,15))
+}
+gradient.Rotation = 45
+gradient.Parent = introFrame
+
+local introText = Instance.new("TextLabel")
+introText.Size = UDim2.new(0.8,0,0.3,0)
+introText.Position = UDim2.new(0.1,0,0.3,0)
+introText.BackgroundTransparency = 1
+introText.Text = "🌙 Moon Animator Enhanced"
+introText.TextColor3 = Color3.fromRGB(255,140,0)
+introText.Font = Enum.Font.GothamBold
+introText.TextScaled = true
+introText.ZIndex = 1001
+introText.Parent = introFrame
+
+local versionText = Instance.new("TextLabel")
+versionText.Size = UDim2.new(0.6,0,0.1,0)
+versionText.Position = UDim2.new(0.2,0,0.6,0)
+versionText.BackgroundTransparency = 1
+versionText.Text = "Version 4.0 - Enhanced Edition"
+versionText.TextColor3 = Color3.fromRGB(180,180,180)
+versionText.Font = Enum.Font.Gotham
+versionText.TextScaled = true
+versionText.ZIndex = 1001
+versionText.Parent = introFrame
+
+-- Animated intro text
+local textTween = TweenService:Create(introText, 
+    TweenInfo.new(1.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), 
+    {TextTransparency = 0, Position = UDim2.new(0.1,0,0.35,0)}
+)
+introText.TextTransparency = 1
+introText.Position = UDim2.new(0.1,0,0.5,0)
+textTween:Play()
+
+-- Enhanced color scheme
+local orangeBtnColor = Color3.fromRGB(255, 140, 0)
+local darkBtnColor = Color3.fromRGB(45, 35, 15)
+local greyBtnColor = Color3.fromRGB(90, 90, 90)
+local activeBtnColor = Color3.fromRGB(255, 180, 40)
+local dangerBtnColor = Color3.fromRGB(220, 50, 50)
+
+-- Enhanced Onion Skin System
+local onionSettings = {
+    enabled = false,
+    transparency = 0.6,
+    depth = 5,
+    color = Color3.fromRGB(255, 140, 0),
+    throttle = 1/60,  -- 60fps for smoother onion
+    colorMode = "gradient"  -- "solid" or "gradient"
+}
+
+local previousPosesBuffer = {}
+
+-- Sound feedback system
+local sounds = {
+    click = "rbxasset://sounds/electronicpingshort.wav",
+    success = "rbxasset://sounds/bell.wav",
+    error = "rbxasset://sounds/error.wav"
+}
+
+local function playSound(soundType)
+    local sound = Instance.new("Sound")
+    sound.SoundId = sounds[soundType] or sounds.click
+    sound.Volume = 0.3
+    sound.Parent = SoundService
+    sound:Play()
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+end
+
+-- Enhanced pose capture with metadata
+local function captureCurrentPose()
+    local pose = {
+        timestamp = tick(),
+        parts = {}
+    }
+    for _, name in ipairs(partsToRecord) do
+        local p = Dummy:FindFirstChild(name)
+        if p and p:IsA("BasePart") then
+            pose.parts[name] = p.CFrame
+        end
+    end
+    return pose
+end
+
+-- Advanced onion overlay system
+local function clearOnionOverlays()
+    for _, name in ipairs(partsToRecord) do
+        local p = Dummy:FindFirstChild(name)
+        if p and p:IsA("BasePart") then
+            for _, child in ipairs(p:GetChildren()) do
+                if child:IsA("BoxHandleAdornment") and child.Name:find("^OnionGhost") then
+                    child:Destroy()
+                end
+            end
+        end
+    end
+end
+
+local lastOnionDraw = 0
+local function drawOnion()
+    if not onionSettings.enabled then
+        clearOnionOverlays()
+        return
+    end
+    
+    local tNow = tick()
+    if tNow - lastOnionDraw < onionSettings.throttle then
+        return
+    end
+    lastOnionDraw = tNow
+
+    clearOnionOverlays()
+
+    for layer = 1, math.min(onionSettings.depth, #previousPosesBuffer) do
+        local pose = previousPosesBuffer[layer]
+        if pose and pose.parts then
+            local layerTrans = math.clamp(onionSettings.transparency + (layer-1)*0.15, 0, 1)
+            local layerColor = onionSettings.color
+            
+            if onionSettings.colorMode == "gradient" then
+                local hue = (tick() * 0.5 + layer * 0.2) % 1
+                layerColor = Color3.fromHSV(hue, 0.8, 1)
+            end
+            
+            for _, name in ipairs(partsToRecord) do
+                local part = Dummy:FindFirstChild(name)
+                local prevCF = pose.parts[name]
+                if part and prevCF then
+                    local adorn = Instance.new("BoxHandleAdornment")
+                    adorn.Name = ("OnionGhost_%d_%s"):format(layer, name)
+                    adorn.Adornee = part
+                    adorn.Color3 = layerColor
+                    adorn.Transparency = layerTrans
+                    adorn.ZIndex = 1
+                    adorn.AlwaysOnTop = false
+                    adorn.Size = part.Size * 1.05  -- Slightly larger for visibility
+                    adorn.CFrame = part.CFrame:ToObjectSpace(prevCF)
+                    adorn.Parent = part
+                end
+            end
+        end
+    end
+end
+
+local function pushPoseToOnionBuffer()
+    table.insert(previousPosesBuffer, 1, captureCurrentPose())
+    if #previousPosesBuffer > onionSettings.depth then
+        table.remove(previousPosesBuffer)
+    end
+end
+
+-- Enhanced UI Base with better styling
+local uiBase = Instance.new("Frame", gui)
+uiBase.Size = UDim2.new(0, 480, 0, 220)
+uiBase.Position = UDim2.new(0, 20, 0.5, -110)
+uiBase.BackgroundColor3 = Color3.fromRGB(25, 15, 5)
+uiBase.BorderSizePixel = 0
+uiBase.Visible = false
+
+local uiCorner = Instance.new("UICorner", uiBase)
+uiCorner.CornerRadius = UDim.new(0, 8)
+
+-- Subtle drop shadow effect
+local shadowFrame = Instance.new("Frame", uiBase)
+shadowFrame.Size = UDim2.new(1, 4, 1, 4)
+shadowFrame.Position = UDim2.new(0, -2, 0, -2)
+shadowFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+shadowFrame.BackgroundTransparency = 0.7
+shadowFrame.ZIndex = -1
+Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 10)
+
+-- Enhanced intro sequence
+task.delay(2, function()
+    local fadeOutTween = TweenService:Create(introFrame, 
+        TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+        {BackgroundTransparency = 1}
+    )
+    local textFadeOut = TweenService:Create(introText, 
+        TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+        {TextTransparency = 1}
+    )
+    local versionFadeOut = TweenService:Create(versionText, 
+        TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+        {TextTransparency = 1}
+    )
+    
+    fadeOutTween:Play()
+    textFadeOut:Play()
+    versionFadeOut:Play()
+    
+    fadeOutTween.Completed:Wait()
+    introFrame:Destroy()
+    
+    uiBase.Visible = true
+    uiBase.BackgroundTransparency = 1
+    local fadeInTween = TweenService:Create(uiBase, 
+        TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), 
+        {BackgroundTransparency = 0}
+    )
+    fadeInTween:Play()
+    playSound("success")
+end)
+
+-- Enhanced title with animation info
+local uiTitle = Instance.new("TextLabel", uiBase)
+uiTitle.Size = UDim2.new(1, -10, 0, 28)
+uiTitle.Position = UDim2.new(0, 5, 0, 3)
+uiTitle.Text = "🌙 Moon Animator Enhanced v4.0"
+uiTitle.TextColor3 = orangeBtnColor
+uiTitle.Font = Enum.Font.GothamBold
+uiTitle.TextSize = 18
+uiTitle.BackgroundTransparency = 1
+uiTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Enhanced button creation with hover effects
+local function createButton(parent, name, xPos, yPos, width, height, text, color)
+    local btn = Instance.new("TextButton", parent)
+    btn.Name = name
+    btn.Size = UDim2.new(0, width, 0, height)
+    btn.Position = UDim2.new(0, xPos, 0, yPos)
+    btn.BackgroundColor3 = color
+    btn.TextColor3 = Color3.fromRGB(20, 20, 20)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = math.min(14, height - 6)
+    btn.Text = text
+    btn.AutoButtonColor = false
+    
+    local corner = Instance.new("UICorner", btn)
+    corner.CornerRadius = UDim.new(0, 4)
+    
+    -- Hover effects
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = activeBtnColor}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = color}):Play()
+    end)
+    
+    return btn
+end
+
+-- Button layout with improved spacing
+local btnWidth, btnHeight, btnGap = 90, 30, 5
+local btnY1 = 35
+
+-- Row 1: Core animation controls
+local addBtn = createButton(uiBase, "addKey", 10 + (btnWidth + btnGap) * 0, btnY1, btnWidth, btnHeight, "➕ Add Key", orangeBtnColor)
+local playBtn = createButton(uiBase, "play", 10 + (btnWidth + btnGap) * 1, btnY1, btnWidth, btnHeight, "▶️ Play", orangeBtnColor)
+local pauseBtn = createButton(uiBase, "pause", 10 + (btnWidth + btnGap) * 2, btnY1, btnWidth, btnHeight, "⏸️ Pause", greyBtnColor)
+local loopBtn = createButton(uiBase, "loop", 10 + (btnWidth + btnGap) * 3, btnY1, btnWidth, btnHeight, "🔁 Loop: OFF", greyBtnColor)
+local resetBtn = createButton(uiBase, "reset", 10 + (btnWidth + btnGap) * 4, btnY1, btnWidth, btnHeight, "♻️ Reset", orangeBtnColor)
+
+-- Row 2: Advanced controls
+local btnY2 = 70
+local speedDownBtn = createButton(uiBase, "speedDown", 10, btnY2, 65, btnHeight, "🐢 Speed -", orangeBtnColor)
+local speedUpBtn = createButton(uiBase, "speedUp", 85, btnY2, 65, btnHeight, "⚡ Speed +", orangeBtnColor)
+local onionBtn = createButton(uiBase, "onionToggle", 160, btnY2, 100, btnHeight, "🧅 Onion: OFF", greyBtnColor)
+local clearBtn = createButton(uiBase, "clear", 270, btnY2, 80, btnHeight, "🧼 Clear", dangerBtnColor)
+local slotsToggleBtn = createButton(uiBase, "slotsToggle", 360, btnY2, 110, btnHeight, "📁 Slots", orangeBtnColor)
+
+-- Row 3: Import/Export
+local inputName = Instance.new("TextBox", uiBase)
+inputName.Size = UDim2.new(0, 220, 0, 30)
+inputName.Position = UDim2.new(0, 10, 0, 110)
+inputName.PlaceholderText = "Animation ID or JSON data..."
+inputName.ClearTextOnFocus = false
+inputName.Text = ""
+inputName.BackgroundColor3 = darkBtnColor
+inputName.TextColor3 = Color3.fromRGB(255, 255, 255)
+inputName.Font = Enum.Font.Gotham
+inputName.TextSize = 14
+Instance.new("UICorner", inputName).CornerRadius = UDim.new(0, 4)
+
+local saveBtn = createButton(uiBase, "saveAnim", 240, 110, 90, 30, "💾 Save", orangeBtnColor)
+local loadBtn = createButton(uiBase, "loadAnim", 340, 110, 90, 30, "📂 Load", orangeBtnColor)
+
+-- Row 4: Export options
+local exportPosBtn = createButton(uiBase, "exportPos", 10, 150, 140, 30, "📤 Export JSON", orangeBtnColor)
+local exportIdBtn = createButton(uiBase, "exportId", 160, 150, 140, 30, "📤 Export ID", orangeBtnColor)
+local importBtn = createButton(uiBase, "import", 310, 150, 140, 30, "📥 Quick Import", orangeBtnColor)
+
+-- Enhanced Timeline with better visualization
+local timelineFrame = Instance.new("Frame", uiBase)
+timelineFrame.Size = UDim2.new(1, -20, 0, 32)
+timelineFrame.Position = UDim2.new(0, 10, 0, 190)
+timelineFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+timelineFrame.BorderSizePixel = 0
+Instance.new("UICorner", timelineFrame).CornerRadius = UDim.new(0, 4)
+
+local progressBar = Instance.new("Frame", timelineFrame)
+progressBar.Size = UDim2.new(0, 0, 1, 0)
+progressBar.Position = UDim2.new(0, 0, 0, 0)
+progressBar.BackgroundColor3 = orangeBtnColor
+progressBar.BorderSizePixel = 0
+Instance.new("UICorner", progressBar).CornerRadius = UDim.new(0, 4)
+
+-- Timeline time markers
+local timeMarkers = {}
+local function createTimeMarkers()
+    for _, marker in pairs(timeMarkers) do
+        marker:Destroy()
+    end
+    timeMarkers = {}
+    
+    for i = 1, 10 do
+        local marker = Instance.new("Frame", timelineFrame)
+        marker.Size = UDim2.new(0, 1, 1, 0)
+        marker.Position = UDim2.new(i/10, 0, 0, 0)
+        marker.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        marker.BorderSizePixel = 0
+        table.insert(timeMarkers, marker)
+    end
+end
+createTimeMarkers()
+
+-- Animation variables with enhancements
+local keyframeButtons = {}
+local timelineTime = 0
+local timeStep = 0.5
+local playing = false
+local paused = false
+local playStartTime = 0
+local playDuration = 0
+local loopEnabled = false
+local playbackSpeed = 1
+local currentFrame = 1
+
+-- Enhanced timeline refresh
+local function refreshTimeline()
+    for _, btn in pairs(keyframeButtons) do
+        btn:Destroy()
+    end
+    keyframeButtons = {}
+
+    local keys = {}
+    for t in pairs(animationData) do table.insert(keys, t) end
+    table.sort(keys)
+    
+    animationMetadata.duration = keys[#keys] or 0
+
+    for i, t in ipairs(keys) do
+        local btn = Instance.new("TextButton", timelineFrame)
+        btn.Size = UDim2.new(0, 16, 0, 28)
+        btn.Position = UDim2.new(0, (t / (keys[#keys] or 1)) * (timelineFrame.AbsoluteSize.X - 16), 0, 2)
+        btn.BackgroundColor3 = orangeBtnColor
+        btn.Text = "⬥"
+        btn.TextColor3 = Color3.fromRGB(20, 20, 20)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 20
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+        -- Enhanced keyframe interaction
+        btn.MouseButton1Click:Connect(function()
+            timelineTime = t
+            currentFrame = i
+            local keyframe = animationData[t]
+            if keyframe then
+                local rootPart = Dummy:FindFirstChild(rootPartName)
+                if rootPart then
+                    rootPart.CFrame = keyframe.Root
+                end
+                for partName, cfLocal in pairs(keyframe.Parts) do
+                    local part = Dummy:FindFirstChild(partName)
+                    if part and cfLocal then
+                        part.CFrame = keyframe.Root * cfLocal
+                    end
+                end
+                pushPoseToOnionBuffer()
+                drawOnion()
+                playSound("click")
+            end
+        end)
+        
+        -- Right click to delete keyframe
+        btn.MouseButton2Click:Connect(function()
+            animationData[t] = nil
+            refreshTimeline()
+            playSound("click")
+        end)
+
+        table.insert(keyframeButtons, btn)
+    end
+end
+
+-- Enhanced progress bar
+local function updateProgressBar(t)
+    if playDuration > 0 then
+        local percent = math.clamp(t / playDuration, 0, 1)
+        progressBar:TweenSize(UDim2.new(percent, 0, 1, 0), 
+            Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.05, true)
+    else
+        progressBar.Size = UDim2.new(0, 0, 1, 0)
+    end
+end
+
+-- Enhanced interpolation with multiple easing modes
+local easingModes = {
+    linear = function(t) return t end,
+    easeIn = function(t) return t * t end,
+    easeOut = function(t) return 1 - (1 - t) * (1 - t) end,
+    easeInOut = function(t) return t < 0.5 and 2 * t * t or 1 - 2 * (1 - t) * (1 - t) end,
+    elastic = function(t) 
+        if t == 0 or t == 1 then return t end
+        return -math.pow(2, 10 * (t - 1)) * math.sin((t - 1.1) * 5 * math.pi)
+    end
+}
+
+local currentEasing = "easeInOut"
+
+local function slerp(c0, c1, alpha)
+    local pos = c0.Position:Lerp(c1.Position, alpha)
+    local rot0 = c0 - c0.Position
+    local rot1 = c1 - c1.Position
+    local rot = rot0:lerp(rot1, alpha)
+    return CFrame.new(pos) * rot
+end
+
+-- Enhanced animation playback
+playBtn.MouseButton1Click:Connect(function()
+    if not next(animationData) then 
+        playSound("error")
+        return 
+    end
+
+    if paused then
+        paused = false
+        playing = true
+        playBtn.Text = "⏸️ Pause"
+        pauseBtn.Text = "⏸️ Paused"
+        playSound("click")
+        return
+    end
+
+    playing = true
+    paused = false
+    playStartTime = tick()
+    playBtn.Text = "⏸️ Pause"
+    pauseBtn.Text = "⏸️ Pause"
+
+    local keys = {}
+    for time in pairs(animationData) do table.insert(keys, time) end
+    table.sort(keys)
+    playDuration = keys[#keys] or 0
+    
+    playSound("success")
+
+    RS:BindToRenderStep("PlayAnimationEnhanced", 201, function()
+        if not playing then
+            RS:UnbindFromRenderStep("PlayAnimationEnhanced")
+            updateProgressBar(0)
+            playBtn.Text = "▶️ Play"
+            pauseBtn.Text = "⏸️ Pause"
+            return
+        end
+        
+        if paused then return end
+
+        local elapsed = (tick() - playStartTime) * playbackSpeed
+
+        if loopEnabled and elapsed > playDuration then
+            playStartTime = tick()
+            elapsed = 0
+            previousPosesBuffer = {}
+        end
+
+        updateProgressBar(elapsed)
+
+        local before, after = nil, nil
+        for i = 1, #keys - 1 do
+            if elapsed >= keys[i] and elapsed <= keys[i+1] then
+                before = keys[i]
+                after = keys[i+1]
+                break
+            end
+        end
+
+        local rootPart = Dummy:FindFirstChild(rootPartName)
+        if before and after and rootPart then
+            local rawAlpha = (elapsed - before) / (after - before)
+            local alpha = easingModes[currentEasing](math.clamp(rawAlpha, 0, 1))
+            local beforeFrame = animationData[before]
+            local afterFrame = animationData[after]
+
+            local rootCFrame = slerp(beforeFrame.Root, afterFrame.Root, alpha)
+            rootPart.CFrame = rootCFrame
+
+            for partName, cfLocal in pairs(beforeFrame.Parts) do
+                local part = Dummy:FindFirstChild(partName)
+                local afterCfLocal = afterFrame.Parts[partName]
+                if part and cfLocal and afterCfLocal then
+                    local lerpedLocal = cfLocal:lerp(afterCfLocal, alpha)
+                    part.CFrame = rootCFrame * lerpedLocal
+                end
+            end
+
+            drawOnion()
+            if math.random() < 0.1 then -- Sample 10% for performance
+                pushPoseToOnionBuffer()
+            end
+
+        elseif #keys > 0 and elapsed <= keys[1] then
+            drawOnion()
+            if math.random() < 0.1 then
+                pushPoseToOnionBuffer()
+            end
+        elseif elapsed > keys[#keys] then
+            if not loopEnabled then
+                playing = false
+                paused = false
+                RS:UnbindFromRenderStep("PlayAnimationEnhanced")
+                updateProgressBar(0)
+                playBtn.Text = "▶️ Play"
+                pauseBtn.Text = "⏸️ Pause"
+            end
+        end
+    end)
+end)
+
+-- Pause functionality
+pauseBtn.MouseButton1Click:Connect(function()
+    if playing then
+        paused = not paused
+        pauseBtn.Text = paused and "▶️ Resume" or "⏸️ Pause"
+        playBtn.Text = paused and "▶️ Resume" or "⏸️ Pause"
+        playSound("click")
+    end
+end)
+
+-- Enhanced loop toggle
+loopBtn.MouseButton1Click:Connect(function()
+    loopEnabled = not loopEnabled
+    loopBtn.Text = "🔁 Loop: " .. (loopEnabled and "ON" or "OFF")
+    loopBtn.BackgroundColor3 = loopEnabled and orangeBtnColor or greyBtnColor
+    playSound("click")
+end)
+
+-- Enhanced keyframe addition
+addBtn.MouseButton1Click:Connect(function()
+    local rootPart = Dummy:FindFirstChild(rootPartName)
+    if not rootPart then 
+        playSound("error")
+        return 
+    end
+
+    local keyframe = {
+        Root = rootPart.CFrame, 
+        Parts = {},
+        timestamp = tick(),
+        easing = currentEasing
+    }
+    
+    for _, partName in pairs(partsToRecord) do
+        local part = Dummy:FindFirstChild(partName)
+        if part then
+            keyframe.Parts[partName] = rootPart.CFrame:ToObjectSpace(part.CFrame)
+        end
+    end
+    
+    animationData[timelineTime] = keyframe
+    timelineTime += timeStep
+    refreshTimeline()
+    pushPoseToOnionBuffer()
+    drawOnion()
+    playSound("success")
+end)
+
+-- Enhanced reset with smooth transition
+resetBtn.MouseButton1Click:Connect(function()
+    playing = false
+    paused = false
+    
+    local rootPart = Dummy:FindFirstChild(rootPartName)
+    if rootPart and defaultRootCFrame then
+        local resetTween = TweenService:Create(rootPart, 
+            TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            {CFrame = defaultRootCFrame}
+        )
+        resetTween:Play()
+    end
+    
+    for partName, cf in pairs(defaultPose) do
+        local part = Dummy:FindFirstChild(partName)
+        if part then
+            local resetTween = TweenService:Create(part,
+                TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                {CFrame = cf}
+            )
+            resetTween:Play()
+        end
+    end
+    
+    previousPosesBuffer = {}
+    clearOnionOverlays()
+    playSound("click")
+end)
+
+-- Enhanced clear with confirmation
+clearBtn.MouseButton1Click:Connect(function()
+    -- Simple confirmation by double-click
+    if clearBtn.Text == "🧼 Clear" then
+        clearBtn.Text = "⚠️ Sure?"
+        clearBtn.BackgroundColor3 = dangerBtnColor
+        task.delay(3, function()
+            if clearBtn.Text == "⚠️ Sure?" then
+                clearBtn.Text = "🧼 Clear"
+                clearBtn.BackgroundColor3 = dangerBtnColor
+            end
+        end)
+        return
+    end
+    
+    animationData = {}
+    timelineTime = 0
+    refreshTimeline()
+    previousPosesBuffer = {}
+    clearOnionOverlays()
+    clearBtn.Text = "🧼 Clear"
+    playSound("success")
+end)
+
+-- Enhanced onion skin toggle with settings
+onionBtn.MouseButton1Click:Connect(function()
+    onionSettings.enabled = not onionSettings.enabled
+    onionBtn.Text = onionSettings.enabled and "🧅 Onion: ON" or "🧅 Onion: OFF"
+    onionBtn.BackgroundColor3 = onionSettings.enabled and orangeBtnColor or greyBtnColor
+    
+    if not onionSettings.enabled then
+        clearOnionOverlays()
+    else
+        previousPosesBuffer = {}
+        pushPoseToOnionBuffer()
+        drawOnion()
+    end
+    playSound("click")
+end)
+
+-- Enhanced hash function
+local function advancedHash(str)
+    local hash = 5381
+    for i = 1, #str do
+        hash = ((hash * 33) + string.byte(str, i)) % 2^32
+    end
+    return tostring(hash)
+end
+
+-- Enhanced slots system
+local slotsGui = Instance.new("Frame", gui)
+slotsGui.Size = UDim2.new(0, 480, 0, 90)
+slotsGui.Position = UDim2.new(0, 20, 0.5, 120)
+slotsGui.BackgroundColor3 = Color3.fromRGB(15, 10, 5)
+slotsGui.BorderSizePixel = 0
+slotsGui.Visible = false
+Instance.new("UICorner", slotsGui).CornerRadius = UDim.new(0, 8)
+
+local slotsTitle = Instance.new("TextLabel", slotsGui)
+slotsTitle.Size = UDim2.new(1, -20, 0, 25)
+slotsTitle.Position = UDim2.new(0, 10, 0, 5)
+slotsTitle.BackgroundTransparency = 1
+slotsTitle.Text = "💾 Animation Slots - Quick Save & Load"
+slotsTitle.Font = Enum.Font.GothamBold
+slotsTitle.TextSize = 16
+slotsTitle.TextColor3 = orangeBtnColor
+slotsTitle.TextXAlignment = Enum.TextXAlignment.Center
+
+local slots = {}
+local slotCount = 6
+local slotWidth = 70
+local slotHeight = 35
+local slotPadding = 8
+local startX = 15
+local startY = 35
+
+for i = 1, slotCount do
+    local slotFrame = Instance.new("Frame", slotsGui)
+    slotFrame.Size = UDim2.new(0, slotWidth, 0, slotHeight + 20)
+    slotFrame.Position = UDim2.new(0, startX + (slotWidth + slotPadding) * (i-1), 0, startY)
+    slotFrame.BackgroundColor3 = Color3.fromRGB(35, 25, 15)
+    slotFrame.BorderSizePixel = 0
+    Instance.new("UICorner", slotFrame).CornerRadius = UDim.new(0, 6)
+
+    local slotBtn = Instance.new("TextButton", slotFrame)
+    slotBtn.Size = UDim2.new(1, 0, 0, slotHeight)
+    slotBtn.Position = UDim2.new(0, 0, 0, 0)
+    slotBtn.BackgroundColor3 = orangeBtnColor
+    slotBtn.Text = "Slot " .. i
+    slotBtn.Font = Enum.Font.GothamBold
+    slotBtn.TextColor3 = Color3.fromRGB(20, 20, 20)
+    slotBtn.TextSize = 12
+    Instance.new("UICorner", slotBtn).CornerRadius = UDim.new(0, 4)
+
+    local saveSlotBtn = Instance.new("TextButton", slotFrame)
+    saveSlotBtn.Size = UDim2.new(0.5, -1, 0, 20)
+    saveSlotBtn.Position = UDim2.new(0, 0, 0, slotHeight)
+    saveSlotBtn.BackgroundColor3 = orangeBtnColor
+    saveSlotBtn.Text = "💾"
+    saveSlotBtn.Font = Enum.Font.GothamBold
+    saveSlotBtn.TextColor3 = Color3.fromRGB(20, 20, 20)
+    saveSlotBtn.TextSize = 10
+    Instance.new("UICorner", saveSlotBtn).CornerRadius = UDim.new(0, 3)
+
+    local loadSlotBtn = Instance.new("TextButton", slotFrame)
+    loadSlotBtn.Size = UDim2.new(0.5, -1, 0, 20)
+    loadSlotBtn.Position = UDim2.new(0.5, 1, 0, slotHeight)
+    loadSlotBtn.BackgroundColor3 = orangeBtnColor
+    loadSlotBtn.Text = "📂"
+    loadSlotBtn.Font = Enum.Font.GothamBold
+    loadSlotBtn.TextColor3 = Color3.fromRGB(20, 20, 20)
+    loadSlotBtn.TextSize = 10
+    Instance.new("UICorner", loadSlotBtn).CornerRadius = UDim.new(0, 3)
+
+    slots[i] = {
+        slotBtn = slotBtn,
+        saveBtn = saveSlotBtn,
+        loadBtn = loadSlotBtn,
+        frame = slotFrame
+    }
+end
+
+-- Enhanced save/load functions
+local function saveToSlot(slot)
+    local data = {
+        animation = animationData,
+        metadata = animationMetadata,
+        settings = {
+            timeStep = timeStep,
+            playbackSpeed = playbackSpeed,
+            currentEasing = currentEasing
+        }
+    }
+    
+    local success, json = pcall(function()
+        return HttpService:JSONEncode(data)
+    end)
+    
+    if success then
+        LocalPlayer:SetAttribute("MoonAnimSlot_"..slot, json)
+        slots[slot].frame.BackgroundColor3 = Color3.fromRGB(50, 80, 50) -- Green tint for saved
+        playSound("success")
+    else
+        playSound("error")
+    end
+end
+
+local function loadFromSlot(slot)
+    local json = LocalPlayer:GetAttribute("MoonAnimSlot_"..slot)
+    if not json then 
+        playSound("error")
+        return 
+    end
+    
+    local success, data = pcall(function()
+        return HttpService:JSONDecode(json)
+    end)
+    
+    if success and data then
+        animationData = data.animation or {}
+        if data.metadata then
+            animationMetadata = data.metadata
+        end
+        if data.settings then
+            timeStep = data.settings.timeStep or 0.5
+            playbackSpeed = data.settings.playbackSpeed or 1
+            currentEasing = data.settings.currentEasing or "easeInOut"
+        end
+        
+        timelineTime = 0
+        refreshTimeline()
+        previousPosesBuffer = {}
+        clearOnionOverlays()
+        playSound("success")
+    else
+        playSound("error")
+    end
+end
+
+-- Connect slot events
+for i = 1, slotCount do
+    local s = slots[i]
+    
+    s.saveBtn.MouseButton1Click:Connect(function()
+        saveToSlot(i)
+    end)
+    
+    s.loadBtn.MouseButton1Click:Connect(function()
+        loadFromSlot(i)
+    end)
+    
+    -- Check if slot has data on startup
+    local json = LocalPlayer:GetAttribute("MoonAnimSlot_"..i)
+    if json then
+        s.frame.BackgroundColor3 = Color3.fromRGB(50, 80, 50)
+    end
+end
+
+-- Slots toggle
+slotsToggleBtn.MouseButton1Click:Connect(function()
+    slotsGui.Visible = not slotsGui.Visible
+    playSound("click")
+end)
+
+-- Enhanced save/load with metadata
+saveBtn.MouseButton1Click:Connect(function()
+    local data = {
+        animation = animationData,
+        metadata = animationMetadata,
+        version = "4.0"
+    }
+    
+    local success, json = pcall(function()
+        return HttpService:JSONEncode(data)
+    end)
+    
+    if success then
+        local id = advancedHash(json)
+        LocalPlayer:SetAttribute("MoonAnimID_"..id, json)
+        inputName.Text = "MoonAnimID:"..id
+        playSound("success")
+    else
+        playSound("error")
+    end
+end)
+
+loadBtn.MouseButton1Click:Connect(function()
+    local text = inputName.Text
+    local id = text:match("^MoonAnimID:(%w+)$")
+    
+    if id then
+        local json = LocalPlayer:GetAttribute("MoonAnimID_"..id)
+        if json then
+            local success, data = pcall(function()
+                return HttpService:JSONDecode(json)
+            end)
+            
+            if success and data then
+                animationData = data.animation or {}
+                if data.metadata then
+                    animationMetadata = data.metadata
+                end
+                timelineTime = 0
+                refreshTimeline()
+                previousPosesBuffer = {}
+                clearOnionOverlays()
+                playSound("success")
+                return
+            end
+        end
+    end
+    playSound("error")
+end)
+
+-- Enhanced export functions
+exportPosBtn.MouseButton1Click:Connect(function()
+    local data = {
+        animation = animationData,
+        metadata = animationMetadata,
+        exported = os.date("%Y-%m-%d %H:%M:%S"),
+        version = "4.0"
+    }
+    
+    local success, json = pcall(function()
+        return HttpService:JSONEncode(data)
+    end)
+    
+    if success then
+        inputName.Text = json
+        playSound("success")
+    else
+        playSound("error")
+    end
+end)
+
+-- Enhanced export storage
+local exportStorage = {}
+local function generateAdvancedId()
+    local charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    local id = ""
+    for i = 1, 8 do
+        id = id .. charset:sub(math.random(1, #charset), math.random(1, #charset))
+    end
+    return id
+end
+
+exportIdBtn.MouseButton1Click:Connect(function()
+    local data = {
+        animation = animationData,
+        metadata = animationMetadata,
+        exported = os.date("%Y-%m-%d %H:%M:%S"),
+        version = "4.0"
+    }
+    
+    local success, json = pcall(function()
+        return HttpService:JSONEncode(data)
+    end)
+    
+    if success then
+        local id = generateAdvancedId()
+        exportStorage[id] = json
+        inputName.Text = "MoonAnim://" .. id
+        playSound("success")
+    else
+        playSound("error")
+    end
+end)
+
+-- Enhanced import function
+local function importByCustomId(code)
+    local id = code:match("^MoonAnim://(%w+)$")
+    if not id then return nil end
+    local json = exportStorage[id]
+    if not json then return nil end
+    
+    local success, data = pcall(function()
+        return HttpService:JSONDecode(json)
+    end)
+    
+    if success then
+        return data
+    else
+        return nil
+    end
+end
+
+importBtn.MouseButton1Click:Connect(function()
+    local txt = inputName.Text
+    
+    -- Try different import formats
+    if txt:sub(1, 11) == "MoonAnim://" then
+        local data = importByCustomId(txt)
+        if data then
+            animationData = data.animation or {}
+            if data.metadata then
+                animationMetadata = data.metadata
+            end
+            timelineTime = 0
+            refreshTimeline()
+            previousPosesBuffer = {}
+            clearOnionOverlays()
+            playSound("success")
+            return
+        end
+    end
+    
+    -- Try JSON import
+    local success, data = pcall(function()
+        return HttpService:JSONDecode(txt)
+    end)
+    
+    if success and data then
+        if data.animation then
+            animationData = data.animation
+            if data.metadata then
+                animationMetadata = data.metadata
+            end
+        else
+            animationData = data
+        end
+        timelineTime = 0
+        refreshTimeline()
+        previousPosesBuffer = {}
+        clearOnionOverlays()
+        playSound("success")
+    else
+        playSound("error")
+    end
+end)
+
+-- Enhanced speed controls
+local minSpeed, maxSpeed = 0.05, 10
+speedDownBtn.MouseButton1Click:Connect(function()
+    playbackSpeed = math.clamp(playbackSpeed - 0.1, minSpeed, maxSpeed)
+    print(string.format("[🐢] Animation Speed: %.2fx", playbackSpeed))
+    playSound("click")
+end)
+
+speedUpBtn.MouseButton1Click:Connect(function()
+    playbackSpeed = math.clamp(playbackSpeed + 0.1, minSpeed, maxSpeed)
+    print(string.format("[⚡] Animation Speed: %.2fx", playbackSpeed))
+    playSound("click")
+end)
+
+-- Enhanced draggable toggle with better styling
+local toggleBtn = Instance.new("TextButton", gui)
+toggleBtn.Name = "ToggleButton"
+toggleBtn.Size = UDim2.new(0, 35, 0, 35)
+toggleBtn.Position = UDim2.new(0, 20, 0.5, -160)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+toggleBtn.Text = "🌙"
+toggleBtn.TextColor3 = Color3.fromRGB(40, 40, 50)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextScaled = true
+toggleBtn.BorderSizePixel = 0
+toggleBtn.AutoButtonColor = false
+
+local toggleCorner = Instance.new("UICorner", toggleBtn)
+toggleCorner.CornerRadius = UDim.new(0, 17)
+
+-- Toggle glow effect
+local toggleGlow = Instance.new("ImageLabel", toggleBtn)
+toggleGlow.Size = UDim2.new(1.4, 0, 1.4, 0)
+toggleGlow.Position = UDim2.new(-0.2, 0, -0.2, 0)
+toggleGlow.BackgroundTransparency = 1
+toggleGlow.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+toggleGlow.ImageColor3 = orangeBtnColor
+toggleGlow.ImageTransparency = 0.7
+toggleGlow.ZIndex = -1
+
+-- Enhanced drag system
+local draggingToggle = false
+local dragInputToggle
+local dragStartToggle
+local startPosToggle
+
+toggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        draggingToggle = true
+        dragStartToggle = input.Position
+        startPosToggle = toggleBtn.Position
+        
+        -- Visual feedback
+        TweenService:Create(toggleBtn, TweenInfo.new(0.1), 
+            {Size = UDim2.new(0, 32, 0, 32)}):Play()
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingToggle = false
+                TweenService:Create(toggleBtn, TweenInfo.new(0.2, Enum.EasingStyle.Back), 
+                    {Size = UDim2.new(0, 35, 0, 35)}):Play()
+            end
+        end)
+    end
+end)
+
+toggleBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInputToggle = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInputToggle and draggingToggle then
+        local delta = input.Position - dragStartToggle
+        toggleBtn.Position = UDim2.new(
+            startPosToggle.X.Scale,
+            math.clamp(startPosToggle.X.Offset + delta.X, 0, gui.AbsoluteSize.X - toggleBtn.AbsoluteSize.X),
+            startPosToggle.Y.Scale,
+            math.clamp(startPosToggle.Y.Offset + delta.Y, 0, gui.AbsoluteSize.Y - toggleBtn.AbsoluteSize.Y)
+        )
+    end
+end)
+
+-- Enhanced toggle functionality
+toggleBtn.MouseButton1Click:Connect(function()
+    if not draggingToggle then
+        uiBase.Visible = not uiBase.Visible
+        slotsGui.Visible = false -- Hide slots when toggling main UI
+        playSound("click")
+    end
+end)
+
+-- Onion skin settings panel (hidden by default)
+local onionSettingsGui = Instance.new("Frame", gui)
+onionSettingsGui.Size = UDim2.new(0, 300, 0, 200)
+onionSettingsGui.Position = UDim2.new(0, 510, 0.5, -100)
+onionSettingsGui.BackgroundColor3 = Color3.fromRGB(20, 15, 10)
+onionSettingsGui.BorderSizePixel = 0
+onionSettingsGui.Visible = false
+Instance.new("UICorner", onionSettingsGui).CornerRadius = UDim.new(0, 8)
+
+local onionTitle = Instance.new("TextLabel", onionSettingsGui)
+onionTitle.Size = UDim2.new(1, -10, 0, 25)
+onionTitle.Position = UDim2.new(0, 5, 0, 5)
+onionTitle.BackgroundTransparency = 1
+onionTitle.Text = "🧅 Onion Skin Settings"
+onionTitle.Font = Enum.Font.GothamBold
+onionTitle.TextSize = 16
+onionTitle.TextColor3 = orangeBtnColor
+onionTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Right-click on onion button to show settings
+onionBtn.MouseButton2Click:Connect(function()
+    onionSettingsGui.Visible = not onionSettingsGui.Visible
+end)
+
+-- Keyboard shortcuts
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.Space then
+        playBtn.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.R then
+        resetBtn.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.K then
+        addBtn.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.L then
+        loopBtn.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.O then
+        onionBtn.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.H then
+        toggleBtn.MouseButton1Click:Fire()
+    end
+end)
+
+-- Performance monitoring
+local lastPerformanceCheck = 0
+RS.Heartbeat:Connect(function()
+    local now = tick()
+    if now - lastPerformanceCheck > 5 then -- Check every 5 seconds
+        lastPerformanceCheck = now
+        
+        -- Clean up old onion overlays if performance is low
+        if workspace.StreamingEnabled or #workspace:GetDescendants() > 10000 then
+            if onionSettings.enabled and onionSettings.throttle < 1/30 then
+                onionSettings.throttle = 1/30 -- Reduce onion refresh rate
+                print("[⚡] Performance mode: Reduced onion skin refresh rate")
+            end
+        end
+    end
+end)
+
+-- Auto-save system
+local autoSaveInterval = 300 -- 5 minutes
+local lastAutoSave = tick()
+
+RS.Heartbeat:Connect(function()
+    if tick() - lastAutoSave > autoSaveInterval then
+        if next(animationData) then
+            -- Auto-save to slot 1
+            saveToSlot(1)
+            print("[💾] Auto-saved animation to Slot 1")
+        end
+        lastAutoSave = tick()
+    end
+end)
+
+-- Initialize
+task.wait(0.1)
+refreshTimeline()
+
+print("🌙 Moon Animator Enhanced v4.0 loaded successfully!")
+print("📝 Keyboard Shortcuts:")
+print("   SPACE - Play/Pause")
+print("   R - Reset Pose")  
+print("   K - Add Keyframe")
+print("   L - Toggle Loop")
+print("   O - Toggle Onion Skin")
+print("   H - Toggle UI")
+print("💡 Right-click keyframes to delete them")
+print("💡 Right-click Onion button for settings")
+print("💾 Auto-save enabled (every 5 minutes to Slot 1)")
